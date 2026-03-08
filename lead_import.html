@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lead Import</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: #030712;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'DM Mono', 'Courier New', monospace;
+      color: #f9fafb;
+    }
+    .card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      padding: 40px;
+      width: 480px;
+    }
+    h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
+    .subtitle { color: #64748b; font-size: 13px; margin-bottom: 32px; }
+    label { display: block; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+    select, .file-area {
+      width: 100%; background: #0a0f1e; border: 1px solid #1e293b;
+      border-radius: 8px; color: #f9fafb; font-family: inherit;
+      font-size: 13px; padding: 12px 16px; margin-bottom: 20px;
+      outline: none; transition: border-color 0.2s;
+    }
+    select option { background: #0f172a; }
+    .file-area {
+      cursor: pointer; text-align: center; padding: 24px;
+      border-style: dashed; color: #475569; position: relative;
+    }
+    .file-area.has-file { border-color: #22d3ee44; color: #22d3ee; }
+    .file-area input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .file-icon { font-size: 28px; margin-bottom: 8px; }
+    .file-name { font-size: 12px; margin-top: 4px; }
+    button {
+      width: 100%; padding: 14px; background: #22d3ee; color: #030712;
+      border: none; border-radius: 8px; font-family: inherit;
+      font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    }
+    button:hover { background: #06b6d4; }
+    button:disabled { background: #1e293b; color: #475569; cursor: not-allowed; }
+    .status { margin-top: 16px; padding: 12px 16px; border-radius: 8px; font-size: 13px; display: none; }
+    .status.success { background: #22d3ee11; border: 1px solid #22d3ee33; color: #22d3ee; display: block; }
+    .status.error { background: #f4727211; border: 1px solid #f4727233; color: #f47272; display: block; }
+    .status.loading { background: #a78bfa11; border: 1px solid #a78bfa33; color: #a78bfa; display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Lead Import</h1>
+    <p class="subtitle">CSV hochladen · Duplikate werden erkannt</p>
+
+    <label>Source</label>
+    <select id="source">
+      <option value="Apollo">Apollo</option>
+      <option value="Messe">Messe</option>
+      <option value="LinkedIn">LinkedIn</option>
+      <option value="Manuell">Manuell</option>
+    </select>
+
+    <label>CSV Datei</label>
+    <div class="file-area" id="fileArea">
+      <input type="file" id="fileInput" accept=".csv">
+      <div class="file-icon">📂</div>
+      <div>CSV hier ablegen oder klicken</div>
+      <div class="file-name" id="fileName"></div>
+    </div>
+
+    <button id="submitBtn" disabled>Import starten</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const WEBHOOK_URL = 'https://n8n-personal.y-mk.com/webhook/lead-import';
+
+    const fileInput = document.getElementById('fileInput');
+    const fileArea = document.getElementById('fileArea');
+    const fileName = document.getElementById('fileName');
+    const submitBtn = document.getElementById('submitBtn');
+    const status = document.getElementById('status');
+    const source = document.getElementById('source');
+
+    let selectedFile = null;
+
+    fileInput.addEventListener('change', (e) => {
+      selectedFile = e.target.files[0];
+      if (selectedFile) {
+        fileName.textContent = selectedFile.name;
+        fileArea.classList.add('has-file');
+        submitBtn.disabled = false;
+      }
+    });
+
+    fileArea.addEventListener('dragover', (e) => { e.preventDefault(); fileArea.classList.add('dragover'); });
+    fileArea.addEventListener('dragleave', () => fileArea.classList.remove('dragover'));
+    fileArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      fileArea.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file && file.name.endsWith('.csv')) {
+        selectedFile = file;
+        fileName.textContent = file.name;
+        fileArea.classList.add('has-file');
+        submitBtn.disabled = false;
+      }
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      submitBtn.disabled = true;
+      status.className = 'status loading';
+      status.textContent = '⏳ CSV wird gelesen...';
+
+      try {
+        // CSV als Text lesen
+        const csvText = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.onerror = reject;
+          reader.readAsText(selectedFile, 'UTF-8');
+        });
+
+        status.textContent = '⏳ Import läuft...';
+
+        // Als JSON senden — kein CORS Problem!
+        const response = await fetch(WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: source.value,
+            filename: selectedFile.name,
+            csv: csvText
+          })
+        });
+
+        if (response.ok) {
+          status.className = 'status success';
+          status.textContent = '✅ Import gestartet! Leads werden verarbeitet.';
+          submitBtn.disabled = false;
+          selectedFile = null;
+          fileArea.classList.remove('has-file');
+          fileName.textContent = '';
+        } else {
+          throw new Error('Server Fehler: ' + response.status);
+        }
+      } catch (err) {
+        status.className = 'status error';
+        status.textContent = '❌ Fehler: ' + err.message;
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
