@@ -8,7 +8,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       min-height: 100vh;
-      background: #1a0533;
+      background: #ffff00;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -129,10 +129,9 @@
 
         status.textContent = '⏳ Import läuft...';
 
-        await fetch(WEBHOOK_URL, {
+        const response = await fetch(WEBHOOK_URL, {
           method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             source: source.value,
             filename: selectedFile.name,
@@ -140,8 +139,13 @@
           })
         });
 
-        status.className = 'status success';
-        status.textContent = '✅ Import gestartet! Leads werden verarbeitet.';
+        if (response.ok) {
+          status.className = 'status success';
+          status.textContent = '✅ Import erfolgreich! Leads werden verarbeitet.';
+        } else {
+          throw new Error('Server antwortet mit Fehler: ' + response.status);
+        }
+        
         submitBtn.disabled = false;
         selectedFile = null;
         fileArea.classList.remove('has-file');
